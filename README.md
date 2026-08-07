@@ -61,6 +61,12 @@ Pushing a tag of the form `qbt-nox-<qbt-version>_<build>` (for example
 zip attached. Download the latest archive from the
 [Releases](../../releases) page, unzip anywhere, and run `qbittorrent-nox.exe`.
 
+Releases are signed with **Ed25519**. Alongside the zip, each release ships
+`qbittorrent-nox-<ver>-win-x64.zip.sig` (base64 raw signature) and `SHA256SUMS`.
+The public key is in [`signing-key.pub`](signing-key.pub); verification steps are
+in [`SIGNING.md`](SIGNING.md). The signature is produced and self-verified in CI on
+every build.
+
 ## Licensing
 
 `qbittorrent-nox` and its dependencies are Free/Open-Source software. The build

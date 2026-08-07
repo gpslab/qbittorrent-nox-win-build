@@ -319,6 +319,16 @@ jobs:
           "zip_path=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "zip_name=qbittorrent-nox-$ver-win-${{ matrix.arch }}.zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+      - name: Sign bundle (Ed25519)
+        env:
+          QBT_NOX_SIGNING_KEY_PEM: ${{ secrets.QBT_NOX_SIGNING_KEY_PEM }}
+        run: |
+          node "${{ github.workspace }}/build-repo/.github/scripts/sign-bundle.js" "${{ steps.package.outputs.zip_path }}"
+
+      - name: Self-verify signature (Ed25519, against committed public key)
+        run: |
+          node "${{ github.workspace }}/build-repo/.github/scripts/verify-bundle.js" "${{ steps.package.outputs.zip_path }}" "${{ github.workspace }}/build-repo/signing-key.pub"
+
       - name: Upload bundle artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -331,7 +341,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/qbt-nox-')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.package.outputs.zip_path }}
+          files: |
+            ${{ steps.package.outputs.zip_path }}
+            ${{ steps.package.outputs.zip_path }}.sig
+            ${{ github.workspace }}/SHA256SUMS
           fail_on_unmatched_files: true
           body: |
             Headless upstream **qbittorrent-nox** for Windows x64, compiled from pinned upstream sources.
@@ -345,3 +358,8 @@ jobs:
 
             License texts and copyright for every bundled component are in `THIRD-PARTY-LICENSES/`
             inside the archive. Reproduce with the workflow in this repository (pinned versions above).
+
+            **Integrity**
+            The archive is signed with Ed25519. `qbittorrent-nox-<ver>-win-x64.zip.sig` is the
+            base64 raw signature over the zip; `SHA256SUMS` lists its SHA-256. Verify against the
+            public key in `signing-key.pub` at the repo root (see `SIGNING.md`).
