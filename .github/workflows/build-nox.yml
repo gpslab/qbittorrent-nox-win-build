@@ -11,10 +11,10 @@ name: build-nox
 #   - push tag 'qbt-nox-*'             -> build + smoke-test + publish Release
 on:
   push:
-    branches: [main]
+    branches: [master]
     tags: ['qbt-nox-*']
   pull_request:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 # contents: write is required only to create a Release on a tag push.
@@ -199,7 +199,11 @@ jobs:
           $vsPath = & $vswhere -latest -products * -property installationPath
           $crtRoot = Join-Path $vsPath "VC/Redist/MSVC"
           $crtVer = Get-ChildItem $crtRoot -Directory | Where-Object { $_.Name -match '^\d' } | Sort-Object Name -Descending | Select-Object -First 1
-          $crtDir = Join-Path $crtVer.FullName "${{ matrix.arch }}/Microsoft.VC143.CRT"
+          # The CRT subfolder name tracks the toolset major (VC143 for VS2022, VC144 for VS18, ...),
+          # so resolve it by glob instead of hardcoding a version.
+          $crtSub = Get-ChildItem (Join-Path $crtVer.FullName "${{ matrix.arch }}") -Directory -Filter 'Microsoft.VC*.CRT' | Sort-Object Name -Descending | Select-Object -First 1
+          if ($null -eq $crtSub) { throw "No Microsoft.VC*.CRT redist folder under $($crtVer.FullName)/${{ matrix.arch }}" }
+          $crtDir = $crtSub.FullName
           Write-Host "MSVC CRT redist dir: $crtDir"
           Get-ChildItem "$crtDir/*.dll" | ForEach-Object { Copy-Item $_.FullName $dst; Write-Host "  + $($_.Name)" }
 
@@ -208,6 +212,24 @@ jobs:
           if (Test-Path "${{ github.workspace }}/build-repo/BUNDLE-README.txt") {
             Copy-Item "${{ github.workspace }}/build-repo/BUNDLE-README.txt" "$dst/README.txt"
           }
+
+          # --- Resolved component versions, shipped INSIDE the bundle (not only in CI logs) ---
+          $vf = "$dst/versions.txt"
+          "qbittorrent-nox Windows ${{ matrix.arch }} bundle - resolved component versions" | Set-Content -Path $vf -Encoding ascii
+          "Generated: $(Get-Date -Format o)" | Add-Content $vf
+          "" | Add-Content $vf
+          "qBittorrent:          ${{ matrix.qbt_ref }}"                                              | Add-Content $vf
+          "libtorrent-rasterbar: ${{ matrix.libtorrent_version }} (static)"                          | Add-Content $vf
+          "Qt:                   ${{ matrix.qt_version }} (${{ matrix.qt_arch }}, dynamic DLLs)"      | Add-Content $vf
+          "boost:                ${{ matrix.boost_major }}.${{ matrix.boost_minor }}.${{ matrix.boost_patch }}" | Add-Content $vf
+          "MSVC toolset:         $env:VCToolsVersion"                                                 | Add-Content $vf
+          "MSVC CRT redist dir:  $(Split-Path -Leaf $crtDir)"                                         | Add-Content $vf
+          "" | Add-Content $vf
+          "vcpkg-resolved, statically linked into qbittorrent-nox.exe:" | Add-Content $vf
+          (& ${{ env.vcpkg_path }}/vcpkg.exe list) | Select-String -Pattern '^(openssl|zlib|boost-build):' | ForEach-Object { "  " + $_.Line.Trim() } | Add-Content $vf
+          "" | Add-Content $vf
+          "License texts and copyright for all of the above are in THIRD-PARTY-LICENSES/." | Add-Content $vf
+          Write-Host "----- versions.txt -----"; Get-Content $vf
 
           Get-ChildItem -Recurse $dst | Select-Object FullName, Length
 

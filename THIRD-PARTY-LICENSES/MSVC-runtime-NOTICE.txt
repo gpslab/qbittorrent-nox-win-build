@@ -1,10 +1,16 @@
 Microsoft Visual C++ Runtime (VC14x redistributable)
 
-The files MSVCP140*.dll, VCRUNTIME140*.dll, CONCRT140.dll and related
-Microsoft.VC143.CRT DLLs in this bundle are the Microsoft Visual C++ runtime
-redistributable, (C) Microsoft Corporation. They are redistributed under the
-terms of the Microsoft Visual Studio license governing the redistributable files
-("Distributable Code").
+The files MSVCP140*.dll, VCRUNTIME140*.dll, CONCRT140.dll and related DLLs from
+the Microsoft.VC14x.CRT redistributable folder in this bundle are the Microsoft
+Visual C++ runtime redistributable, (C) Microsoft Corporation. They are
+redistributed under the terms of the Microsoft Visual Studio license governing
+the redistributable files ("Distributable Code").
+
+The exact redistributable folder name tracks the Visual Studio toolset major
+version (e.g. Microsoft.VC143.CRT for VS2022, Microsoft.VC144.CRT for VS18); the
+DLL file names remain 140-based because they share a binary-compatible runtime
+ABI. The resolved folder name for a given build is recorded in versions.txt in
+this bundle.
 
 For GPL/LGPL purposes these are standard operating-system runtime libraries for
 the platform on which qbittorrent-nox runs and are treated as a "System Library"
