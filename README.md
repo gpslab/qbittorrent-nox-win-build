@@ -56,8 +56,8 @@ Trigger a build manually via **Actions → build-nox → Run workflow**
 
 ## Releases
 
-Pushing a tag of the form `qbt-nox-<qbt-version>+<build>` (for example
-`qbt-nox-5.2.3+1`) builds the bundle and publishes it as a GitHub Release with the
+Pushing a tag of the form `qbt-nox-<qbt-version>_<build>` (for example
+`qbt-nox-5.2.3_1`) builds the bundle and publishes it as a GitHub Release with the
 zip attached. Download the latest archive from the
 [Releases](../../releases) page, unzip anywhere, and run `qbittorrent-nox.exe`.
 
