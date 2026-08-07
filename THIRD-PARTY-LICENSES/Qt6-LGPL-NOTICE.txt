@@ -24,3 +24,7 @@ Individual module sources: https://code.qt.io/
 Qt also contains third-party components under their own permissive licenses; see
 the Qt documentation "Licenses Used in Qt" for the complete attribution list:
 https://doc.qt.io/qt-6/licenses-used-in-qt.html
+
+Third-party code compiled into Qt (e.g. PCRE2 inside Qt6Core) is attributed
+separately in Qt-third-party-NOTICE.txt, with the PCRE2 BSD licence text in
+texts/PCRE2-BSD.txt.

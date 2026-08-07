@@ -1,0 +1,4 @@
+SQLite (bundled inside the Qt SQL driver plugin qsqlite.dll)
+
+The Qt SQL driver plugin plugins/sqldrivers/qsqlite.dll embeds SQLite.
+SQLite is in the public domain. See https://sqlite.org/copyright.html

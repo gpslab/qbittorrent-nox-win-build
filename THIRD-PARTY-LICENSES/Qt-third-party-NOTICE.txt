@@ -1,0 +1,24 @@
+Third-party code bundled inside the Qt 6 libraries
+==================================================
+
+The Qt 6 DLLs shipped in this bundle (in particular Qt6Core.dll) statically
+incorporate third-party components under their own permissive licenses. The most
+significant one is PCRE2, which Qt uses for regular-expression support and which
+is compiled into Qt6Core. Its license and copyright are reproduced below.
+
+For the authoritative and complete list of third-party code in Qt (which may
+include additional components such as the Unicode Character Database, etc.), see
+Qt's "Licenses Used in Qt" documentation:
+  https://doc.qt.io/qt-6/licenses-used-in-qt.html
+This URL is provided as a supplement, not as the sole source of attribution.
+
+-------------------------------------------------------------------------------
+PCRE2 - Perl-Compatible Regular Expressions (bundled inside Qt6Core)
+-------------------------------------------------------------------------------
+Copyright (c) 1997-2024 University of Cambridge
+Copyright (c) 2009-2024 Zoltan Herczeg (JIT compiler)
+Copyright (c) 2007-2024 the PCRE2 authors
+
+PCRE2 is distributed under the terms of the "BSD" (3-clause) license.
+The full PCRE2 licence text is in texts/PCRE2-BSD.txt.
+-------------------------------------------------------------------------------
