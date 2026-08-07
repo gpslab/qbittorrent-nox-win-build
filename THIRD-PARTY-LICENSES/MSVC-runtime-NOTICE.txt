@@ -1,0 +1,14 @@
+Microsoft Visual C++ Runtime (VC14x redistributable)
+
+The files MSVCP140*.dll, VCRUNTIME140*.dll, CONCRT140.dll and related
+Microsoft.VC143.CRT DLLs in this bundle are the Microsoft Visual C++ runtime
+redistributable, (C) Microsoft Corporation. They are redistributed under the
+terms of the Microsoft Visual Studio license governing the redistributable files
+("Distributable Code").
+
+For GPL/LGPL purposes these are standard operating-system runtime libraries for
+the platform on which qbittorrent-nox runs and are treated as a "System Library"
+(GPLv3 System Library exception).
+
+The Universal C Runtime (api-ms-win-crt-*.dll) is a component of Windows 10 and
+later and is therefore NOT bundled; it is provided by the operating system.

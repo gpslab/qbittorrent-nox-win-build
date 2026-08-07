@@ -1,0 +1,26 @@
+Qt 6
+Copyright (C) The Qt Company Ltd. and other contributors.
+https://www.qt.io/
+
+The Qt 6 libraries included in this bundle (Qt6Core.dll, Qt6Network.dll,
+Qt6Sql.dll, Qt6Xml.dll and the Qt plugins under plugins/) are used under the
+terms of the GNU Lesser General Public License version 3 (LGPLv3). The LGPLv3
+text is in texts/LGPL-3.0.txt; it incorporates by reference the GNU General
+Public License version 3 in texts/GPL-3.0.txt.
+
+RELINKING (LGPLv3 section 4):
+Qt is provided here as UNMODIFIED, DYNAMICALLY-LINKED, REPLACEABLE DLLs. You may
+obtain the LGPLv3-licensed portions of Qt, modify them, rebuild the corresponding
+Qt DLLs, and replace the Qt6*.dll files in this bundle (and the plugins/
+directory) with your modified versions. qbittorrent-nox loads Qt by dynamic
+linking and reads its plugins via the bundled qt.conf, so a compatible replacement
+DLL will be used in place of the shipped one.
+
+The Qt version used in this bundle is 6.10.3 (prebuilt, win64_msvc2022_64).
+Corresponding source for Qt is available from The Qt Company:
+https://download.qt.io/archive/qt/6.10/6.10.3/single/
+Individual module sources: https://code.qt.io/
+
+Qt also contains third-party components under their own permissive licenses; see
+the Qt documentation "Licenses Used in Qt" for the complete attribution list:
+https://doc.qt.io/qt-6/licenses-used-in-qt.html

@@ -1,0 +1,21 @@
+qBittorrent - a BitTorrent client
+Copyright (C) 2006- The qBittorrent project
+https://www.qbittorrent.org/
+
+qBittorrent is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 2 of the License, or (at your option) any later
+version ("GPLv2-or-later").
+
+In this bundle qBittorrent is redistributed under the terms of the GNU General
+Public License version 3 (see texts/GPL-3.0.txt). The GPL version 2 text is also
+included (texts/GPL-2.0.txt).
+
+Corresponding source: upstream qBittorrent at tag release-5.2.3,
+https://github.com/qbittorrent/qBittorrent/tree/release-5.2.3
+No source modifications are applied by this build; the build recipe is
+.github/workflows/build-nox.yml in this repository.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.

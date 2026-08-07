@@ -1,0 +1,325 @@
+name: build-nox
+
+# CI build of the headless upstream qBittorrent client (qbittorrent-nox) for
+# Windows x64. Upstream does not ship a headless Windows artifact, so this repo
+# compiles it from the pinned upstream sources and publishes a redistributable
+# bundle as a GitHub Release.
+#
+# Triggers:
+#   - pull_request / push to branches -> build + smoke-test only (validation)
+#   - workflow_dispatch                -> manual build + smoke-test
+#   - push tag 'qbt-nox-*'             -> build + smoke-test + publish Release
+on:
+  push:
+    branches: [main]
+    tags: ['qbt-nox-*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# contents: write is required only to create a Release on a tag push.
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build qbittorrent-nox (Win x64, MSVC)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      actions: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - qbt_ref: "release-5.2.3"
+            libtorrent_version: "2.0.13"
+            boost_major: "1"
+            boost_minor: "91"
+            boost_patch: "0"
+            qt_version: "6.10.3"
+            qt_arch: "win64_msvc2022_64"
+            arch: "x64"
+
+    env:
+      boost_path: "${{ github.workspace }}/../boost"
+      libtorrent_path: "${{ github.workspace }}/../libtorrent"
+      vcpkg_path: "c:/vcpkg"
+
+    steps:
+      - name: Checkout this build repo
+        uses: actions/checkout@v4
+        with:
+          path: build-repo
+          persist-credentials: false
+
+      - name: Checkout qBittorrent source
+        uses: actions/checkout@v4
+        with:
+          repository: qbittorrent/qBittorrent
+          ref: ${{ matrix.qbt_ref }}
+          path: qbt-src
+          persist-credentials: false
+
+      - name: Setup MSVC dev cmd
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Install build tools (ninja)
+        run: |
+          if ((Get-Command "ninja.exe" -ErrorAction SilentlyContinue) -eq $null) { choco install ninja }
+          ninja --version
+
+      - name: Export vcpkg GHA cache variables
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', (process.env.ACTIONS_CACHE_URL || ''));
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', (process.env.ACTIONS_RUNTIME_TOKEN || ''));
+
+      - name: Install openssl/zlib/boost-build via vcpkg (static-md)
+        run: |
+          New-Item -Force -ItemType File `
+            -Path "${{ env.vcpkg_path }}/triplets_overlay/${{ matrix.arch }}-windows-static-md-release.cmake"
+          Add-Content `
+            -Path "${{ env.vcpkg_path }}/triplets_overlay/${{ matrix.arch }}-windows-static-md-release.cmake" `
+            -Value @("set(VCPKG_TARGET_ARCHITECTURE ${{ matrix.arch }})",
+              "set(VCPKG_LIBRARY_LINKAGE static)",
+              "set(VCPKG_CRT_LINKAGE dynamic)",
+              "set(VCPKG_BUILD_TYPE release)")
+          $packages = `
+            "boost-build:${{ matrix.arch }}-windows-static-md-release",
+            "openssl:${{ matrix.arch }}-windows-static-md-release",
+            "zlib:${{ matrix.arch }}-windows-static-md-release"
+          & ${{ env.vcpkg_path }}/vcpkg.exe upgrade `
+            --no-dry-run `
+            --overlay-triplets="${{ env.vcpkg_path }}/triplets_overlay"
+          & ${{ env.vcpkg_path }}/vcpkg.exe install `
+            --binarysource="clear;x-gha,readwrite" `
+            --clean-after-build `
+            --overlay-triplets="${{ env.vcpkg_path }}/triplets_overlay" `
+            $packages
+
+      - name: Record dependency versions (OpenSSL etc.)
+        run: |
+          Write-Host "===== vcpkg installed package versions ====="
+          & ${{ env.vcpkg_path }}/vcpkg.exe list
+          Write-Host "===== OpenSSL (grep) ====="
+          & ${{ env.vcpkg_path }}/vcpkg.exe list | Select-String -Pattern "openssl"
+
+      - name: Install boost headers
+        run: |
+          $boost_url="https://archives.boost.io/release/${{ matrix.boost_major }}.${{ matrix.boost_minor }}.${{ matrix.boost_patch }}/source/boost_${{ matrix.boost_major }}_${{ matrix.boost_minor }}_${{ matrix.boost_patch }}.tar.gz"
+          $boost_url2="https://sourceforge.net/projects/boost/files/boost/${{ matrix.boost_major }}.${{ matrix.boost_minor }}.${{ matrix.boost_patch }}/boost_${{ matrix.boost_major }}_${{ matrix.boost_minor }}_${{ matrix.boost_patch }}.tar.gz"
+          curl -L -o "${{ runner.temp }}/boost.tar.gz" "$boost_url"
+          tar -xf "${{ runner.temp }}/boost.tar.gz" -C "${{ github.workspace }}/.."
+          if ($LastExitCode -ne 0) {
+            curl -L -o "${{ runner.temp }}/boost.tar.gz" "$boost_url2"
+            tar -xf "${{ runner.temp }}/boost.tar.gz" -C "${{ github.workspace }}/.."
+          }
+          move "${{ github.workspace }}/../boost_*" "${{ env.boost_path }}"
+          cd "${{ env.boost_path }}"
+          & ${{ env.vcpkg_path }}/installed/${{ matrix.arch }}-windows-static-md-release/tools/boost-build/b2.exe `
+            stage toolset=msvc --stagedir=.\ --with-headers
+
+      - name: Install Qt (prebuilt via aqtinstall)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.qt_version }}
+          arch: ${{ matrix.qt_arch }}
+          archives: qtbase qttools
+          cache: true
+
+      - name: Build libtorrent-rasterbar (static)
+        run: |
+          git clone --branch v${{ matrix.libtorrent_version }} --depth 1 --recurse-submodules `
+            https://github.com/arvidn/libtorrent.git ${{ env.libtorrent_path }}
+          cd ${{ env.libtorrent_path }}
+          cmake `
+            -B build -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_CXX_STANDARD=20 `
+            -DCMAKE_INSTALL_PREFIX="${{ env.libtorrent_path }}/install" `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.vcpkg_path }}/scripts/buildsystems/vcpkg.cmake" `
+            -DBOOST_ROOT="${{ env.boost_path }}/lib/cmake" `
+            -DBUILD_SHARED_LIBS=OFF `
+            -Ddeprecated-functions=OFF `
+            -Dstatic_runtime=OFF `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.arch }}-windows-static-md-release
+          cmake --build build
+          cmake --install build
+
+      - name: Build qbittorrent-nox (GUI=OFF, WEBUI=ON)
+        working-directory: qbt-src
+        run: |
+          cmake `
+            -B build -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DGUI=OFF `
+            -DWEBUI=ON `
+            -DTESTING=OFF `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.vcpkg_path }}/scripts/buildsystems/vcpkg.cmake" `
+            -DBOOST_ROOT="${{ env.boost_path }}/lib/cmake" `
+            -DLibtorrentRasterbar_DIR="${{ env.libtorrent_path }}/install/lib/cmake/LibtorrentRasterbar" `
+            -DMSVC_RUNTIME_DYNAMIC=ON `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.arch }}-windows-static-md-release `
+            -DVERBOSE_CONFIGURE=ON
+          cmake --build build
+
+      - name: Assemble bundle
+        working-directory: qbt-src
+        run: |
+          $dst = "${{ github.workspace }}/bundle"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item "build/qbittorrent-nox.exe" $dst
+
+          # --- Qt6 runtime DLLs (kept dynamic + replaceable to preserve the LGPLv3 relink right) ---
+          $qtbin = "${{ env.Qt_ROOT_DIR }}/bin"
+          foreach ($d in @("Qt6Core.dll","Qt6Network.dll","Qt6Sql.dll","Qt6Xml.dll")) {
+            if (Test-Path "$qtbin/$d") { Copy-Item "$qtbin/$d" $dst }
+          }
+          New-Item -ItemType Directory -Force -Path "$dst/plugins/tls" | Out-Null
+          foreach ($d in @("qschannelbackend.dll","qopensslbackend.dll","qcertonlybackend.dll")) {
+            if (Test-Path "${{ env.Qt_ROOT_DIR }}/plugins/tls/$d") { Copy-Item "${{ env.Qt_ROOT_DIR }}/plugins/tls/$d" "$dst/plugins/tls" }
+          }
+          New-Item -ItemType Directory -Force -Path "$dst/plugins/sqldrivers" | Out-Null
+          if (Test-Path "${{ env.Qt_ROOT_DIR }}/plugins/sqldrivers/qsqlite.dll") { Copy-Item "${{ env.Qt_ROOT_DIR }}/plugins/sqldrivers/qsqlite.dll" "$dst/plugins/sqldrivers" }
+          "[Paths]`nPlugins = plugins" | Set-Content -Path "$dst/qt.conf" -Encoding ascii
+
+          # --- MSVC C++ runtime redistributable DLLs (VC14x CRT) ---
+          # System-library exception under GPL; redistributable under the VS license.
+          # UCRT (api-ms-win-crt-*) is provided by Windows 10+ and is intentionally not bundled.
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          $crtRoot = Join-Path $vsPath "VC/Redist/MSVC"
+          $crtVer = Get-ChildItem $crtRoot -Directory | Where-Object { $_.Name -match '^\d' } | Sort-Object Name -Descending | Select-Object -First 1
+          $crtDir = Join-Path $crtVer.FullName "${{ matrix.arch }}/Microsoft.VC143.CRT"
+          Write-Host "MSVC CRT redist dir: $crtDir"
+          Get-ChildItem "$crtDir/*.dll" | ForEach-Object { Copy-Item $_.FullName $dst; Write-Host "  + $($_.Name)" }
+
+          # --- License / attribution payload (GPL/LGPL corresponding-notice obligation) ---
+          Copy-Item -Recurse "${{ github.workspace }}/build-repo/THIRD-PARTY-LICENSES" $dst
+          if (Test-Path "${{ github.workspace }}/build-repo/BUNDLE-README.txt") {
+            Copy-Item "${{ github.workspace }}/build-repo/BUNDLE-README.txt" "$dst/README.txt"
+          }
+
+          Get-ChildItem -Recurse $dst | Select-Object FullName, Length
+
+      - name: Headless smoke test (WebUI API + auth)
+        run: |
+          $bundle = "${{ github.workspace }}/bundle"
+          $prof = "${{ runner.temp }}/qbt-profile"
+          $base = "http://localhost:8080"
+          $out = "${{ runner.temp }}/qbt-out.log"
+          $err = "${{ runner.temp }}/qbt-err.log"
+          $proc = Start-Process -FilePath "$bundle/qbittorrent-nox.exe" `
+            -ArgumentList "--profile=$prof","--webui-port=8080","--confirm-legal-notice" `
+            -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+          # 1) wait for the WebUI port to accept TCP connections
+          $up = $false
+          for ($i=0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 2
+            $t = Test-NetConnection -ComputerName 127.0.0.1 -Port 8080 -WarningAction SilentlyContinue
+            if ($t.TcpTestSucceeded) { $up = $true; break }
+          }
+          Write-Host "TCP 8080 open: $up (after $([int]($i*2))s)"
+          # 2) parse the temporary admin password printed to stdout
+          $pw = $null
+          for ($i=0; $i -lt 10; $i++) {
+            if (Test-Path $out) {
+              $c = Get-Content $out -Raw
+              $m = [regex]::Match($c, 'temporary password is provided for this session:\s*(\S+)')
+              if ($m.Success) { $pw = $m.Groups[1].Value; break }
+              if ($c -match 'access the WebUI at') { break }
+            }
+            Start-Sleep -Seconds 2
+          }
+          Write-Host "Parsed temp password: $([bool]$pw)"
+          $headers = @{ Referer = $base; Origin = $base }
+          # 3) authenticate (if a password was issued) and query the API
+          $version = ""; $wa = ""; $ok = $false
+          for ($i=0; $i -lt 15; $i++) {
+            try {
+              if ($pw) {
+                $login = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/api/v2/auth/login" `
+                  -Body @{ username = "admin"; password = $pw } -Headers $headers -SessionVariable sess -TimeoutSec 5
+                if ($login.Content -match 'Fails') { throw "login rejected" }
+                $r  = Invoke-WebRequest -UseBasicParsing -Uri "$base/api/v2/app/version" -Headers $headers -WebSession $sess -TimeoutSec 5
+                $rw = Invoke-WebRequest -UseBasicParsing -Uri "$base/api/v2/app/webapiVersion" -Headers $headers -WebSession $sess -TimeoutSec 5
+              } else {
+                $r  = Invoke-WebRequest -UseBasicParsing -Uri "$base/api/v2/app/version" -Headers $headers -TimeoutSec 5
+                $rw = Invoke-WebRequest -UseBasicParsing -Uri "$base/api/v2/app/webapiVersion" -Headers $headers -TimeoutSec 5
+              }
+              if ($r.StatusCode -eq 200) { $version = $r.Content; $wa = $rw.Content; $ok = $true; break }
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          Write-Host "=== app/version: $version ==="
+          Write-Host "=== app/webapiVersion: $wa ==="
+          Write-Host "--- stdout ---"; if (Test-Path $out) { Get-Content $out }
+          Write-Host "--- stderr ---"; if (Test-Path $err) { Get-Content $err }
+          if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          if (-not $ok) { throw "WebUI API did not return app/version" }
+          Write-Host "SMOKE OK: qbittorrent-nox $version (WebAPI $wa) responded headless over WebUI"
+
+      - name: Collect facts (size, DLL deps, versions)
+        if: always()
+        working-directory: qbt-src
+        run: |
+          Write-Host "===== qbittorrent-nox.exe size ====="
+          Get-Item "build/qbittorrent-nox.exe" | Select-Object Name, Length
+          Write-Host "===== dumpbin /DEPENDENTS: qbittorrent-nox.exe ====="
+          dumpbin /DEPENDENTS "build/qbittorrent-nox.exe"
+          Write-Host "===== dumpbin /DEPENDENTS: bundled Qt DLLs ====="
+          Get-ChildItem "${{ github.workspace }}/bundle" -Filter *.dll | ForEach-Object {
+            Write-Host ">>> $($_.Name)"
+            dumpbin /DEPENDENTS $_.FullName
+          }
+          Write-Host "===== bundle contents + sizes ====="
+          Get-ChildItem -Recurse "${{ github.workspace }}/bundle" | Where-Object { -not $_.PSIsContainer } | Select-Object FullName, Length
+          $total = (Get-ChildItem -Recurse "${{ github.workspace }}/bundle" | Where-Object { -not $_.PSIsContainer } | Measure-Object -Property Length -Sum).Sum
+          Write-Host "===== bundle total bytes: $total ($([math]::Round($total/1MB,2)) MB) ====="
+          Write-Host "===== versions ====="
+          Write-Host "Qt: ${{ matrix.qt_version }} | libtorrent: ${{ matrix.libtorrent_version }} | boost: ${{ matrix.boost_major }}.${{ matrix.boost_minor }}.${{ matrix.boost_patch }} | qBittorrent: ${{ matrix.qbt_ref }}"
+
+      - name: Package bundle (zip)
+        id: package
+        run: |
+          $ver = "${{ matrix.qbt_ref }}" -replace '^release-',''
+          $zip = "${{ github.workspace }}/qbittorrent-nox-$ver-win-${{ matrix.arch }}.zip"
+          Compress-Archive -Path "${{ github.workspace }}/bundle/*" -DestinationPath $zip -Force
+          Write-Host "Packaged: $zip"
+          "zip_path=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "zip_name=qbittorrent-nox-$ver-win-${{ matrix.arch }}.zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload bundle artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qbittorrent-nox-${{ matrix.arch }}
+          path: bundle
+          if-no-files-found: warn
+
+      - name: Publish GitHub Release (tag push only)
+        if: startsWith(github.ref, 'refs/tags/qbt-nox-')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package.outputs.zip_path }}
+          fail_on_unmatched_files: true
+          body: |
+            Headless upstream **qbittorrent-nox** for Windows x64, compiled from pinned upstream sources.
+
+            **Components**
+            - qBittorrent `${{ matrix.qbt_ref }}` (GPLv2-or-later; distributed here under GPLv3)
+            - libtorrent-rasterbar `${{ matrix.libtorrent_version }}` (static, BSD-3-Clause)
+            - Qt `${{ matrix.qt_version }}` (`${{ matrix.qt_arch }}`, LGPLv3 — dynamic, replaceable DLLs)
+            - boost `${{ matrix.boost_major }}.${{ matrix.boost_minor }}.${{ matrix.boost_patch }}` (BSL-1.0), OpenSSL, zlib — via vcpkg (static-md)
+            - MSVC C++ runtime (VC14x) redistributable DLLs
+
+            License texts and copyright for every bundled component are in `THIRD-PARTY-LICENSES/`
+            inside the archive. Reproduce with the workflow in this repository (pinned versions above).
